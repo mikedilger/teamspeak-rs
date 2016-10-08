@@ -61,3 +61,13 @@ impl TeamSpeak {
         Ok(())
     }
 }
+
+impl Drop for TeamSpeak {
+    fn drop(&mut self) {
+        if self.stream.is_some() {
+            // FIXME: Send quit command first.
+
+            let _ = self.stream.as_ref().unwrap().shutdown(Shutdown::Both);
+        }
+    }
+}
