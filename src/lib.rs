@@ -1,9 +1,14 @@
 
+extern crate regex;
+#[macro_use] extern crate lazy_static;
+
 #[cfg(test)]
 mod tests;
 
 use std::net::{TcpStream, Shutdown};
-use std::io::Error as IoError;
+use std::io;
+use std::io::{Read,Write};
+use regex::Regex;
 
 fn ts3_escape(s: &str) -> String
 {
@@ -27,6 +32,43 @@ fn ts3_escape(s: &str) -> String
     output
 }
 
+pub struct TsResult {
+    id: u32,
+    message: String,
+}
+impl TsResult {
+    pub fn read<R: Read>(r: &mut R) -> Result<TsResult, io::Error>
+    {
+        lazy_static! {
+            static ref RE: Regex =
+                Regex::new(r"error\s+id=(\S*)\s+msg=([^\r\n]*)[\r\n]").unwrap();
+        }
+
+        // Read the response
+        let mut output: Vec<u8> = Vec::new();
+        let _count = try!(r.read_to_end(&mut output));
+        let s = String::from_utf8_lossy(&output);
+
+        // Parse the response (for example: " error id=0 msg=ok")
+        match RE.captures_iter(&s).next() {
+            None => Err(io::Error::new(io::ErrorKind::Other, "Response not expected")),
+            Some(cap) => {
+                if let Ok(i) = cap.at(1).unwrap().parse::<u32>() {
+                    Ok( TsResult {
+                        id: i,
+                        message: cap.at(2).unwrap().to_owned(),
+                    })
+                } else {
+                    Ok( TsResult {
+                        id: 4294967295,
+                        message: cap.at(2).unwrap().to_owned(),
+                    })
+                }
+            }
+        }
+    }
+}
+
 pub struct TeamSpeak {
     host: String,
     port: u16,
@@ -47,7 +89,7 @@ impl TeamSpeak {
         }
     }
 
-    pub fn connect(&mut self) -> Result<(), IoError>
+    pub fn connect(&mut self) -> Result<(), io::Error>
     {
         if self.stream.is_some() {
             try!(self.stream.as_ref().unwrap().shutdown(Shutdown::Both));
